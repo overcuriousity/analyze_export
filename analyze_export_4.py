@@ -3,7 +3,7 @@ import sys
 
 # Define the required packages
 required_packages = [
-    'openpyxl', 'docx2txt', 'PyQt5', 'PyPDF2', 'pandas', 'os'
+    'openpyxl', 'PyQt5', 'PyPDF2', 'pandas', 'os'
 ]
 
 # Check if the required packages are installed
@@ -21,7 +21,7 @@ if missing_packages:
         print(package)
 
     print("\nTo install the missing packages, use the following command:")
-    print("pip install <package_name>")
+    print("pip install <package_name>. For Archlinux distros, you might need to use pipx instead, which may be installed via pacman or pamac.")
     print("If you are using a Unix or Mac system, you may need to use pip3 instead of pip.\n")
 
     print("Please install the missing packages and run the script again.")
@@ -32,7 +32,6 @@ else:
     import csv
     import os
     from openpyxl import load_workbook
-    from docx2txt import process as docx2txt_process
     from PyPDF2 import PdfFileReader
     from PyQt5.QtWidgets import (
         QApplication,
@@ -94,8 +93,6 @@ class AnalysisThread(QThread):
             elif file.endswith('.xlsx'):
                 df = pd.read_excel(file)
                 text = ' '.join(df.astype(str).values.flatten())
-            elif file.endswith('.docx'):
-                text = docx2txt_process(file)
             elif file.endswith('.csv'):
                 df = pd.read_csv(file)
                 text = ' '.join(df.astype(str).values.flatten())
