@@ -61,7 +61,7 @@ class AnalysisThread(QThread):
         'IPv4 Address': re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'),
         'IPv6 Address': re.compile(r'\b(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}\b'),
         'Email Address': re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', re.IGNORECASE),
-        'BTC Address': re.compile(r'\b(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-zA-HJ-NP-z0-9]{11,71})\b', re.IGNORECASE),
+        'BTC Address': re.compile(r'\b(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-zA-HJ-NP-Z0-9]{11,71}|^(xpub|xprv|tpub|tprv)[A-HJ-NP-Za-km-z0-9]{107,108})(\?c=\d{10}&h=bip\d{2,3})?$', re.IGNORECASE),
         'BTC txid': re.compile(r'\b[a-fA-F0-9]{64}\b')
     }
 
