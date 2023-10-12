@@ -15,5 +15,5 @@ Features:
  - Python3 (created with 3.11)
  - python libraries: openpyxl, docx2txt, PyQt5, PyPDF2, pandas, os
 
-QA:
-- QA was done automated with ChatGPT and by manual review. Testing only sporadically with limited input data.
+Known Issues:
+  - CSV files are not processed correctly. Solution in progress.
