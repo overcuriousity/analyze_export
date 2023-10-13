@@ -3,16 +3,10 @@ import sys
 
 # Define the required packages
 required_packages = [
-    'openpyxl', 'PyQt5', 'PyPDF2', 'pandas', 'os'
+    'openpyxl', 'PyQt5', 'PyPDF2', 'pandas', 'os', 'tempfile', 'shutil'
 ]
 
-# Check if the required packages are installed
-missing_packages = []
-for package in required_packages:
-    try:
-        importlib.import_module(package)
-    except ImportError:
-        missing_packages.append(package)
+missing_packages = [package for package in required_packages if package not in sys.modules]
 
 # Prompt the user to install missing packages if any
 if missing_packages:
@@ -31,6 +25,8 @@ else:
     import re
     import csv
     import os
+    import tempfile
+    import shutil
     from openpyxl import load_workbook
     from PyPDF2 import PdfFileReader
     from PyQt5.QtWidgets import (
@@ -80,29 +76,75 @@ class AnalysisThread(QThread):
             self.analyze_data(text, self.data, filename)  # Pass the filename parameter
         self.analysis_complete.emit(self.data)  # Emit the signal after analysis
 
-    def extract_text_from_file(self, file):
+    def extract_text_from_file(self, file, delimiter=None):
         text = ''
         try:
+            temp_dir = tempfile.mkdtemp()  # Create a temporary directory
+            temp_file_path = os.path.join(temp_dir, "temp.txt")
+
             if file.endswith('.pdf'):
-                with open(file, "rb") as file:
-                    reader = PdfFileReader(file)
+                with open(file, "rb") as pdf_file:
+                    reader = PdfFileReader(pdf_file)
                     text = ' '.join([reader.getPage(i).extractText() for i in range(reader.getNumPages())])
             elif file.endswith('.txt'):
-                with open(file, 'r') as file:
-                    text = file.read()
+                with open(file, 'r') as txt_file:
+                    text = txt_file.read()
             elif file.endswith('.xlsx'):
                 df = pd.read_excel(file)
                 text = ' '.join(df.astype(str).values.flatten())
             elif file.endswith('.csv'):
-                df = pd.read_csv(file)
-                text = ' '.join(df.astype(str).values.flatten())
+                with open(file, 'r') as csv_file:
+                    if delimiter:
+                        csv_reader = csv.reader(csv_file, delimiter=delimiter)
+                        rows = [' '.join(row) for row in csv_reader]
+                        text = ' '.join(rows)
+                    else:
+                        try:
+                            # Attempt to auto-detect the delimiter
+                            sample_data = csv_file.read(1024)  # Read a sample of the file
+                            dialect = csv.Sniffer().sniff(sample_data)
+                            csv_file.seek(0)  # Reset file pointer
+                            csv_reader = csv.reader(csv_file, dialect)
+                            rows = [' '.join(row) for row in csv_reader]
+                            text = ' '.join(rows)
+                        except csv.Error:
+                            # If delimiter auto-detection fails, fall back to a default delimiter
+                            csv_file.seek(0)
+                            csv_reader = csv.reader(csv_file, delimiter=',')
+                            rows = [' '.join(row) for row in csv_reader]
+                        text = ' '.join(rows)
+            else:
+                raise ValueError(f"Unsupported file type: {file}")
+
+            # Write the extracted text to the temporary text file
+            with open(temp_file_path, 'w') as temp_file:
+                temp_file.write(text)
+
+            # Process the temporary text file
+            text = self.process_temp_text_file(temp_file_path)
+
         except FileNotFoundError:
             print(f"The file {file} was not found.")
         except IOError:
             print(f"There was an error opening the file {file}.")
         except Exception as e:
             print(f"An unexpected error occurred while reading the file: {str(e)}")
+
+        finally:
+            # Clean up by deleting the temporary directory and its contents
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
         return text
+
+    def process_temp_text_file(self, temp_file_path):
+        text = ''
+        try:
+            with open(temp_file_path, 'r') as temp_file:
+                text = temp_file.read()
+        except Exception as e:
+            raise Exception(f"An error occurred while processing the temporary text file: {str(e)}")
+        return text
+
 
     def analyze_data(self, text, data, filename):
         print(f"Analyzing data with the following patterns: {self.patterns}")  # Debugging print
@@ -134,7 +176,8 @@ class MainWindow(QMainWindow):
         self.file_path_button.clicked.connect(self.select_analysis_file)
 
         # File selection for output
-        self.output_file_label = QLabel('No file selected for output')
+        self.output_file_label = QLabel('No file selected for output!')
+
         self.output_file_button = QPushButton('Select File for Output')
         self.output_file_button.clicked.connect(self.select_output_file)
 
@@ -185,10 +228,8 @@ class MainWindow(QMainWindow):
 
     def select_output_file(self):
         file_path, _ = QFileDialog.getSaveFileName(self, 'Save File', '', 'CSV Files (*.csv)')
-
-        if file_path:
-            self.output_file_label.setText(file_path)
-
+        self.output_file_label.setText('No file selected for output!')
+     
     def is_valid_regex(self, pattern):
         try:
             re.compile(pattern)
@@ -205,10 +246,19 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'Invalid Regex', 'The provided regular expression is not valid.')
             return
 
-        # Change this to pass list of file paths instead of single file path
+        # Get the output file path
+        if not self.output_file_label.text() or self.output_file_label.text() == 'No file selected for output!':
+            self.output_file_label.setText('output.csv')
+        output_file_path = self.output_file_label.text()
+        if not output_file_path:
+            # Use a default file name and save it in the script directory
+            output_file_path = os.path.join(os.path.dirname(__file__), 'output.csv')
+
+        # Change this to pass list of file paths instead of a single file path
         self.analysis_thread = AnalysisThread(self.file_paths, selected_entities, regex_pattern)
         self.analysis_thread.analysis_complete.connect(self.analysis_complete)
         self.analysis_thread.start()
+
 
     def generate_summary(self, data):
         summary = ''
@@ -226,7 +276,12 @@ class MainWindow(QMainWindow):
 
     def analysis_complete(self, data):
         summary = self.generate_summary(data)
-        QMessageBox.information(self, 'Analysis Complete', 'The data analysis is complete.\n\n' + summary)
+        output_file_path = self.output_file_label.text()
+        if not output_file_path:
+            output_file_path = os.path.join(os.path.dirname(__file__), 'output.csv')
+        output_message = 'The data analysis is complete.\n\n' + summary
+        output_message += f"\n\nOutput file saved at: {os.path.join(os.path.dirname(__file__), output_file_path)}"
+        QMessageBox.information(self, 'Analysis Complete', output_message)
 
         output_only_crossmatches = self.crossmatch_checkbox.isChecked()
 
