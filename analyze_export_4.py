@@ -6,7 +6,13 @@ required_packages = [
     'openpyxl', 'PyQt5', 'PyPDF2', 'pandas', 'os', 'tempfile', 'shutil'
 ]
 
-missing_packages = [package for package in required_packages if package not in sys.modules]
+# Check if the required packages are installed
+missing_packages = []
+for package in required_packages:
+    try:
+        importlib.import_module(package)
+    except ImportError:
+        missing_packages.append(package)
 
 # Prompt the user to install missing packages if any
 if missing_packages:
@@ -228,6 +234,7 @@ class MainWindow(QMainWindow):
 
     def select_output_file(self):
         file_path, _ = QFileDialog.getSaveFileName(self, 'Save File', '', 'CSV Files (*.csv)')
+
         self.output_file_label.setText('No file selected for output!')
      
     def is_valid_regex(self, pattern):
