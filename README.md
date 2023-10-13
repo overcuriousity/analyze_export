@@ -1,7 +1,5 @@
 # analyze_export
 
-Created by using ChatGPT+ mid 2023.
-
 Features:
 - analyzes various types of text-containing files with regex patterns, output the entities as CSV Spreadsheet for further analysis
 - import of multiple files of different types in one step is possible
@@ -16,4 +14,6 @@ Features:
  - python libraries: openpyxl, docx2txt, PyQt5, PyPDF2, pandas, os
 
 Known Issues:
-  - CSV files are not processed correctly. Solution in progress.
+  - none, testing needed
+
+DISCLAIMER: LLMs were utilized to generate parts of the code, followed ba manual further development.
