@@ -12,8 +12,8 @@ This application is a PyQt5-based tool for analyzing text data from various file
 
 1. Clone the Repository:
    ````bash
-   git clone https://github.com/your-username/data-analyzer.git
-   cd data-analyzer
+   git clone https://github.com/overcuriousity/analyze_export.git
+   cd analyze_export
    
 
 3. Set up a Virtual Environment (Optional but Recommended):
