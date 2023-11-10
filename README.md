@@ -1,4 +1,3 @@
- 
 # Data Analyzer Application
 
 This application is a PyQt5-based tool for analyzing text data from various file formats using regular expressions.
@@ -11,69 +10,41 @@ This application is a PyQt5-based tool for analyzing text data from various file
 
 ## Installation
 
-1. **Clone the Repository**
-
-   ```bash
+1. Clone the Repository:
    git clone https://github.com/your-username/data-analyzer.git
    cd data-analyzer
 
+2. Set up a Virtual Environment (Optional but Recommended):
+   - For Windows:
+     python -m venv venv
+     .\venv\Scripts\activate
+   - For Linux/Mac:
+     python3 -m venv venv
+     source venv/bin/activate
 
-2. Set up a Virtual Environment (Optional but Recommended)
-
-For Windows:
-
-   ```bash
-   Copy code
-   python -m venv venv
-   .\venv\Scripts\activate
-
-For Linux/Mac:
-
-   ```bash
-   Copy code
-   python3 -m venv venv
-   source venv/bin/activate
-
-
-3. Install Required Packages
-
-Install all required packages using the requirements.txt file:
-
-   ```bash
-   Copy code
+3. Install Required Packages:
    pip install -r requirements.txt
 
+4. Run the Application:
+   - For Windows:
+     python analyze_export_4.py
+   - For Linux/Mac:
+     python3 analyze_export_4.py
 
-4. Run the Application
-
-After installing all the dependencies, you can run the application:
-
-For Windows:
-
-   ```bash
-   Copy code
-   python analyze_export_4.py
-
-For Linux/Mac:
-
-   ```bash
-   Copy code
-   python3 analyze_export_4.py
-
-
-5. Usage
+## Usage
 
 After starting the application, follow these steps:
 
-Use the 'Select File for Analysis' button to choose files for analysis.
-Select the types of data patterns you want to analyze (IPv4, IPv6, Email Address, etc.).
-Optionally, enter a custom regex pattern.
-Click on 'Start Analysis' to begin the analysis.
-After the analysis, results will be displayed, and you can choose to save them as a CSV file.
+- Use the 'Select File for Analysis' button to choose files for analysis.
+- Select the types of data patterns you want to analyze (IPv4, IPv6, Email Address, etc.).
+- Optionally, enter a custom regex pattern.
+- Click on 'Start Analysis' to begin the analysis.
+- After the analysis, results will be displayed, and you can choose to save them as a CSV file.
 
+## Contributing
 
-6. Contributing
 Contributions to this project are welcome. Please feel free to fork the repository, make changes, and submit pull requests.
 
-7. License
+## License
+
 This project is licensed under the Unlicense.
