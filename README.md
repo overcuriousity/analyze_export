@@ -22,40 +22,46 @@ This application is a PyQt5-based tool for analyzing text data from various file
 
 For Windows:
 
-bash
-Copy code
-python -m venv venv
-.\venv\Scripts\activate
+   ```bash
+   Copy code
+   python -m venv venv
+   .\venv\Scripts\activate
+
 For Linux/Mac:
 
-bash
-Copy code
-python3 -m venv venv
-source venv/bin/activate
-Install Required Packages
+   ```bash
+   Copy code
+   python3 -m venv venv
+   source venv/bin/activate
+
+
+3. Install Required Packages
 
 Install all required packages using the requirements.txt file:
 
-bash
-Copy code
-pip install -r requirements.txt
-Run the Application
+   ```bash
+   Copy code
+   pip install -r requirements.txt
 
-3. After installing all the dependencies, you can run the application:
+
+4. Run the Application
+
+After installing all the dependencies, you can run the application:
 
 For Windows:
 
-bash
-Copy code
-python analyze_export_4.py
+   ```bash
+   Copy code
+   python analyze_export_4.py
+
 For Linux/Mac:
 
-bash
-Copy code
-python3 analyze_export_4.py
+   ```bash
+   Copy code
+   python3 analyze_export_4.py
 
 
-4. Usage
+5. Usage
 
 After starting the application, follow these steps:
 
@@ -66,8 +72,8 @@ Click on 'Start Analysis' to begin the analysis.
 After the analysis, results will be displayed, and you can choose to save them as a CSV file.
 
 
-5. Contributing
+6. Contributing
 Contributions to this project are welcome. Please feel free to fork the repository, make changes, and submit pull requests.
 
-6. License
+7. License
 This project is licensed under the Unlicense.
