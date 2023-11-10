@@ -1,61 +1,39 @@
-import importlib
 import sys
+import os
+import re
+import csv
+import importlib
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton,
+    QFileDialog, QMessageBox, QCheckBox, QLineEdit
+)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+import pandas as pd
+from PyPDF2 import PdfFileReader
+from openpyxl import load_workbook
 
-# Define the required packages
-required_packages = [
-    'openpyxl', 'PyQt5', 'PyPDF2', 'pandas', 'os', 'tempfile', 'shutil'
-]
+# Function to check and import required packages
+def import_required_packages():
+    required_packages = [
+        'openpyxl', 'PyQt5', 'PyPDF2', 'pandas'
+    ]
 
-# Check if the required packages are installed
-missing_packages = []
-for package in required_packages:
-    try:
-        importlib.import_module(package)
-    except ImportError:
-        missing_packages.append(package)
+    missing_packages = []
+    for package in required_packages:
+        try:
+            importlib.import_module(package)
+        except ImportError:
+            missing_packages.append(package)
 
-# Prompt the user to install missing packages if any
-if missing_packages:
-    print("The following packages are missing:")
-    for package in missing_packages:
-        print(package)
+    if missing_packages:
+        missing = ", ".join(missing_packages)
+        print(f"Missing packages: {missing}")
+        print("\nTo install missing packages, use: pip install " + ' '.join(missing_packages))
+        print("Note: On some Linux distributions, use 'pip3' instead of 'pip'.")
+        print("On Archlinux, consider using 'pipx', installable via 'pacman' or 'pamac'.")
+        sys.exit()
 
-    print("\nTo install the missing packages, use the following command:")
-    print("pip install <package_name>. For Archlinux distros, you might need to use pipx instead, which may be installed via pacman or pamac.")
-    print("If you are using a Unix or Mac system, you may need to use pip3 instead of pip.\n")
-
-    print("Please install the missing packages and run the script again.")
-    sys.exit()  # Exit the script if there are missing packages
-else:
-    # All required packages are installed, proceed with the script
-    import re
-    import csv
-    import os
-    import tempfile
-    import shutil
-    from openpyxl import load_workbook
-    from PyPDF2 import PdfFileReader
-    from PyQt5.QtWidgets import (
-        QApplication,
-        QMainWindow,
-        QWidget,
-        QVBoxLayout,
-        QLabel,
-        QPushButton,
-        QFileDialog,
-        QMessageBox,
-        QCheckBox,
-        QLineEdit,
-    )
-    from PyQt5.QtCore import Qt, QThread, pyqtSignal
-    from concurrent.futures import ThreadPoolExecutor
-    from collections import (
-        Counter,
-        defaultdict
-    ) 
-    import pandas as pd
-    from pandas import read_excel
-
+import_required_packages()
 
 class AnalysisThread(QThread):
     analysis_complete = pyqtSignal(dict)
@@ -67,100 +45,72 @@ class AnalysisThread(QThread):
         'BTC txid': re.compile(r'\b[a-fA-F0-9]{64}\b')
     }
 
-    def __init__(self, file_path, selected_entities, regex_pattern):
+    def __init__(self, file_paths, selected_entities, regex_pattern):
         super().__init__()
-        self.file_path = file_path
+        self.file_paths = file_paths
         self.selected_entities = selected_entities
-        if regex_pattern:  # Add custom pattern during initialization
+        if regex_pattern:
             self.patterns['Custom'] = re.compile(regex_pattern)
-        self.data = {entity: defaultdict(lambda: {'filenames': set(), 'count': 0}) for entity in selected_entities}  # Initialize data here
+        self.data = {entity: defaultdict(lambda: {'filenames': set(), 'count': 0}) for entity in selected_entities}
     
     def run(self):
-        for file_path in self.file_path:
+        for file_path in self.file_paths:
             text = self.extract_text_from_file(file_path)
-            filename = os.path.basename(file_path)  # Extract only the filename from the file_path
-            self.analyze_data(text, self.data, filename)  # Pass the filename parameter
-        self.analysis_complete.emit(self.data)  # Emit the signal after analysis
+            if text is None:
+                continue
+            filename = os.path.basename(file_path)
+            self.analyze_data(text, filename)
+        self.analysis_complete.emit(self.data)
 
-    def extract_text_from_file(self, file, delimiter=None):
-        text = ''
+    def extract_text_from_file(self, file_path):
         try:
-            temp_dir = tempfile.mkdtemp()  # Create a temporary directory
-            temp_file_path = os.path.join(temp_dir, "temp.txt")
-
-            if file.endswith('.pdf'):
-                with open(file, "rb") as pdf_file:
-                    reader = PdfFileReader(pdf_file)
-                    text = ' '.join([reader.getPage(i).extractText() for i in range(reader.getNumPages())])
-            elif file.endswith('.txt'):
-                with open(file, 'r') as txt_file:
-                    text = txt_file.read()
-            elif file.endswith('.xlsx'):
-                df = pd.read_excel(file)
-                text = ' '.join(df.astype(str).values.flatten())
-            elif file.endswith('.csv'):
-                with open(file, 'r') as csv_file:
-                    if delimiter:
-                        csv_reader = csv.reader(csv_file, delimiter=delimiter)
-                        rows = [' '.join(row) for row in csv_reader]
-                        text = ' '.join(rows)
-                    else:
-                        try:
-                            # Attempt to auto-detect the delimiter
-                            sample_data = csv_file.read(1024)  # Read a sample of the file
-                            dialect = csv.Sniffer().sniff(sample_data)
-                            csv_file.seek(0)  # Reset file pointer
-                            csv_reader = csv.reader(csv_file, dialect)
-                            rows = [' '.join(row) for row in csv_reader]
-                            text = ' '.join(rows)
-                        except csv.Error:
-                            # If delimiter auto-detection fails, fall back to a default delimiter
-                            csv_file.seek(0)
-                            csv_reader = csv.reader(csv_file, delimiter=',')
-                            rows = [' '.join(row) for row in csv_reader]
-                        text = ' '.join(rows)
+            if file_path.endswith('.pdf'):
+                return self.extract_text_from_pdf(file_path)
+            elif file_path.endswith('.txt'):
+                return self.extract_text_from_txt(file_path)
+            elif file_path.endswith('.xlsx'):
+                return self.extract_text_from_excel(file_path)
+            elif file_path.endswith('.csv'):
+                return self.extract_text_from_csv(file_path)
             else:
-                raise ValueError(f"Unsupported file type: {file}")
-
-            # Write the extracted text to the temporary text file
-            with open(temp_file_path, 'w') as temp_file:
-                temp_file.write(text)
-
-            # Process the temporary text file
-            text = self.process_temp_text_file(temp_file_path)
-
-        except FileNotFoundError:
-            print(f"The file {file} was not found.")
-        except IOError:
-            print(f"There was an error opening the file {file}.")
+                print(f"Unsupported file type: {file_path}")
+                return None
         except Exception as e:
-            print(f"An unexpected error occurred while reading the file: {str(e)}")
+            print(f"Error processing {file_path}: {e}")
+            return None
 
-        finally:
-            # Clean up by deleting the temporary directory and its contents
-            shutil.rmtree(temp_dir, ignore_errors=True)
+    # Methods to handle different file types
+    def extract_text_from_pdf(self, file_path):
+        with open(file_path, "rb") as pdf_file:
+            reader = PdfFileReader(pdf_file)
+            return ' '.join([reader.getPage(i).extractText() for i in range(reader.getNumPages())])
 
-        return text
+    def extract_text_from_txt(self, file_path):
+        with open(file_path, 'r') as txt_file:
+            return txt_file.read()
 
-    def process_temp_text_file(self, temp_file_path):
-        text = ''
-        try:
-            with open(temp_file_path, 'r') as temp_file:
-                text = temp_file.read()
-        except Exception as e:
-            raise Exception(f"An error occurred while processing the temporary text file: {str(e)}")
-        return text
+    def extract_text_from_excel(self, file_path):
+        df = pd.read_excel(file_path)
+        return ' '.join(df.astype(str).values.flatten())
 
+    def extract_text_from_csv(self, file_path):
+        with open(file_path, 'r') as csv_file:
+            try:
+                sample_data = csv_file.read(1024)
+                dialect = csv.Sniffer().sniff(sample_data)
+                csv_file.seek(0)
+                csv_reader = csv.reader(csv_file, dialect)
+            except csv.Error:
+                csv_file.seek(0)
+                csv_reader = csv.reader(csv_file, delimiter=',')
+            return ' '.join([' '.join(row) for row in csv_reader])
 
-    def analyze_data(self, text, data, filename):
-        print(f"Analyzing data with the following patterns: {self.patterns}")  # Debugging print
-
-        num_entities = len(self.selected_entities)
-        for i, entity in enumerate(self.selected_entities, 1):
+    def analyze_data(self, text, filename):
+        for entity in self.selected_entities:
             matches = self.patterns[entity].findall(text)
             for match in matches:
-                data[entity][match]['filenames'].add(filename)
-                data[entity][match]['count'] += 1
+                self.data[entity][match]['filenames'].add(filename)
+                self.data[entity][match]['count'] += 1
 
 
 class MainWindow(QMainWindow):
@@ -319,7 +269,11 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'Unexpected Error', f"An unexpected error occurred while writing to the file: {str(e)}")
 
 
-app = QApplication([])
-window = MainWindow()
-window.show()
-app.exec_()
+def main():
+    app = QApplication([])
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    main()
