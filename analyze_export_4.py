@@ -4,6 +4,7 @@ import os
 import re
 import csv
 import importlib
+import logging
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton,
     QFileDialog, QMessageBox, QCheckBox, QLineEdit
@@ -12,6 +13,8 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import pandas as pd
 from PyPDF2 import PdfFileReader
 from openpyxl import load_workbook
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Function to check and import required packages
 def import_required_packages():
@@ -64,37 +67,57 @@ class AnalysisThread(QThread):
         self.analysis_complete.emit(self.data)
 
     def extract_text_from_file(self, file_path):
+        logging.debug(f'Reading input file: {file_path}')
         try:
             if file_path.endswith('.pdf'):
                 return self.extract_text_from_pdf(file_path)
+                logging.debug('Finished reading PDF input file.')
             elif file_path.endswith('.txt'):
                 return self.extract_text_from_txt(file_path)
+                logging.debug('Finished reading TXT input file.')
             elif file_path.endswith('.xlsx'):
                 return self.extract_text_from_excel(file_path)
+                text_from_excel = self.extract_text_from_excel(file_path)
+                logging.debug(f'Text extracted from XLSX file: {text_from_excel[:100]}...')  # Logs the first 100 characters of the extracted text
+                logging.debug('Finished reading XLSX input file.')
             elif file_path.endswith('.csv'):
                 return self.extract_text_from_csv(file_path)
+                logging.debug('Finished reading CSV input file.')
             else:
                 print(f"Unsupported file type: {file_path}")
                 return None
+                logging.debug('Finished reading input file - unsupported')
         except Exception as e:
             print(f"Error processing {file_path}: {e}")
             return None
+            logging.debug('Finished reading input file with error.')
 
     # Methods to handle different file types
     def extract_text_from_pdf(self, file_path):
+        logging.debug('Starting analysis of PDF')
         with open(file_path, "rb") as pdf_file:
             reader = PdfFileReader(pdf_file)
             return ' '.join([reader.getPage(i).extractText() for i in range(reader.getNumPages())])
 
     def extract_text_from_txt(self, file_path):
+        logging.debug('Starting analysis of TXT')
         with open(file_path, 'r') as txt_file:
             return txt_file.read()
 
     def extract_text_from_excel(self, file_path):
-        df = pd.read_excel(file_path)
-        return ' '.join(df.astype(str).values.flatten())
+        logging.debug('Starting analysis of XLSX file: ' + file_path)
+        try:
+            logging.debug('Attempting to read Excel file using pandas...')
+            df = pd.read_excel(file_path)
+            text = ' '.join(df.astype(str).values.flatten())
+            logging.debug('Successfully extracted text from XLSX file.')
+            return text
+        except Exception as e:
+            logging.error(f'Error occurred while processing XLSX file {file_path}: {e}')
+            return ''
 
     def extract_text_from_csv(self, file_path):
+        logging.debug('Starting analysis CSV, flattening data...')
         with open(file_path, 'r') as csv_file:
             try:
                 sample_data = csv_file.read(1024)
@@ -107,11 +130,13 @@ class AnalysisThread(QThread):
             return ' '.join([' '.join(row) for row in csv_reader])
 
     def analyze_data(self, text, filename):
+        logging.debug('Starting data processing...')
         for entity in self.selected_entities:
             matches = self.patterns[entity].findall(text)
             for match in matches:
                 self.data[entity][match]['filenames'].add(filename)
                 self.data[entity][match]['count'] += 1
+        logging.debug('Data processing complete. Preparing to generate output...')
 
 
 class MainWindow(QMainWindow):
@@ -184,16 +209,18 @@ class MainWindow(QMainWindow):
             self.crossmatch_checkbox.setEnabled(len(file_paths) > 1)
 
     def select_output_file(self):
+        logging.debug('select_output_file function called. Opening file dialog for output file selection.')
+        
         file_path, _ = QFileDialog.getSaveFileName(self, 'Save File', '', 'CSV Files (*.csv)')
+        
+        if file_path:
+            logging.debug(f'Output file selected: {file_path}')
+            self.output_file_label.setText(file_path)
+            self.selected_output_file = file_path
+        else:
+            logging.debug('Output file selection was canceled by the user.')
+            self.output_file_label.setText('No file selected for output!')
 
-        self.output_file_label.setText('No file selected for output!')
-     
-    def is_valid_regex(self, pattern):
-        try:
-            re.compile(pattern)
-            return True
-        except re.error:
-            return False
 
     def start_analysis(self):
         selected_entities = [entity for entity, checkbox in self.checkboxes.items() if checkbox.isChecked()]
@@ -258,6 +285,11 @@ class MainWindow(QMainWindow):
                             continue
                         filenames_str = ", ".join(info['filenames'])
                         writer.writerow({'Type': entity, 'Entity': match, 'Occurrences': info['count'], 'Filenames': filenames_str})
+                        logging.debug('writing unique value to output file')
+                    logging.debug('writing value to output file')
+                logging.debug('Analysis complete. Writing results to output file.')
+            logging.debug('Output file generation complete.')
+
         except Exception as e:
             print("Error while writing to CSV file: ", e)
 
@@ -268,7 +300,6 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'File Error', f"There was an error writing to the file {self.output_file_label.text()}.")
         except Exception as e:
             QMessageBox.critical(self, 'Unexpected Error', f"An unexpected error occurred while writing to the file: {str(e)}")
-
 
 def main():
     app = QApplication([])
