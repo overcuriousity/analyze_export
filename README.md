@@ -53,6 +53,10 @@ After starting the application, follow these steps:
 - Click on 'Start Analysis' to begin the analysis.
 - After the analysis, results will be displayed, and you can choose to save them as a CSV file.
 
+## Known Issues
+
+- xlsx files are not processed correctly. As a workaround, CSV should be ingested.
+
 ## Contributing
 
 Contributions to this project are welcome. Please feel free to fork the repository, make changes, and submit pull requests.
