@@ -130,13 +130,15 @@ class AnalysisThread(QThread):
             return ' '.join([' '.join(row) for row in csv_reader])
 
     def analyze_data(self, text, filename):
-        logging.debug('Starting data processing...')
-        for entity in self.selected_entities:
-            matches = self.patterns[entity].findall(text)
-            for match in matches:
-                self.data[entity][match]['filenames'].add(filename)
-                self.data[entity][match]['count'] += 1
-        logging.debug('Data processing complete. Preparing to generate output...')
+        lines = text.split('\n')  # Split the text into lines
+        for line_number, line in enumerate(lines, start=1):
+            for entity in self.selected_entities:
+                matches = self.patterns[entity].findall(line)
+                for match in matches:
+                    if (filename, line_number) not in self.data[entity][match]['filenames']:
+                        self.data[entity][match]['filenames'].add((filename, line_number))
+                    self.data[entity][match]['count'] += 1
+
 
 
 class MainWindow(QMainWindow):
@@ -274,17 +276,15 @@ class MainWindow(QMainWindow):
             # Output the data to a CSV file
             with open(self.output_file_label.text(), 'w', newline='') as csvfile:
                 print("Writing to output.csv")  # Debugging print
-                fieldnames = ['Type', 'Entity', 'Occurrences', 'Filenames']
+                fieldnames = ['Type', 'Entity', 'Occurrences', 'Source']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
                 writer.writeheader()
                 for entity, matches in data.items():
                     for match, info in matches.items():
-                        # Skip if it's not a crossmatch and only crossmatches are to be outputted
-                        if output_only_crossmatches and len(info['filenames']) <= 1:
-                            continue
-                        filenames_str = ", ".join(info['filenames'])
-                        writer.writerow({'Type': entity, 'Entity': match, 'Occurrences': info['count'], 'Filenames': filenames_str})
+                        # Prepare filenames and line numbers string
+                        filenames_lines = ", ".join([f"Line {line} in {fname}" for fname, line in info['filenames']])
+                        writer.writerow({'Type': entity, 'Entity': match, 'Occurrences': info['count'], 'Source': filenames_lines})
                         logging.debug('writing unique value to output file')
                     logging.debug('writing value to output file')
                 logging.debug('Analysis complete. Writing results to output file.')
