@@ -4,9 +4,11 @@ This application is a PyQt5-based tool for analyzing text data from various file
 
 ## Features
 
-- Support for multiple file formats (PDF, TXT, XLSX, CSV).
-- Regular expression-based analysis for different data patterns.
-- GUI for easy interaction and usage.
+- Support for multiple file formats (PDF, TXT, CSV)
+- Regular expression-based analysis for different data patterns
+- Regular Expressions can be added freely in a config file, GUI adapts dynamically
+- GUI for easy interaction and usage
+- can provide context from the source files for easy reference, configurable
 
 ## Installation
 
@@ -52,10 +54,12 @@ After starting the application, follow these steps:
 - Optionally, enter a custom regex pattern.
 - Click on 'Start Analysis' to begin the analysis.
 - After the analysis, results will be displayed, and you can choose to save them as a CSV file.
+- On the top, choose if you want to include snippets of the source file, configure the amount of sentences, lines, words or characters to get as context.
 
 ## Known Issues
 
 - xlsx files are not processed correctly. As a workaround, CSV should be ingested.
+- context cannot be provided if the entity occurs in multiple filesThis requires still manual operation.
 
 ## Contributing
 
