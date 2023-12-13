@@ -123,13 +123,18 @@ class AnalysisThread(QThread):
             for entity in self.selected_entities:
                 matches = self.patterns[entity].findall(line)
                 for match in matches:
-                    data_entry = self.data[entity][match]
+                    # Handle tuple matches
+                    if isinstance(match, tuple):
+                        match_str = ' '.join(match)
+                    else:
+                        match_str = match
+
+                    data_entry = self.data[entity][match_str]
                     data_entry['filenames'].add(filename)
                     data_entry['count'] += 1
                     if self.include_context:
-                        context = self.get_context(lines, line_number, match)
+                        context = self.get_context(lines, line_number, match_str)
                         data_entry.setdefault('context', []).append(context)
-
 
     def get_context(self, lines, line_number, match):
         if self.context_type == 'sentences':
@@ -180,7 +185,6 @@ class AnalysisThread(QThread):
         buffer = ' '.join(lines[max(0, line_number - 3):min(len(lines), line_number + 2)])
         sentences = re.split(r'(?<=[.!?]) +', buffer)
 
-        # Find the sentence containing the entity
         match_sentence_index = -1
         for i, sentence in enumerate(sentences):
             if match in sentence:
