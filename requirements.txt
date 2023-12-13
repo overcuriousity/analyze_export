@@ -1,5 +1,5 @@
-PyQt5==5.15.4
-pandas==1.3.4
-PyPDF2==1.26.0
-openpyxl==3.0.9
-
+PyQt5
+pandas
+PyPDF2
+openpyxl
+pyaml
