@@ -5,9 +5,10 @@ import re
 import csv
 import importlib
 import logging
+import yaml
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton,
-    QFileDialog, QMessageBox, QCheckBox, QLineEdit
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QFileDialog, QMessageBox, QCheckBox, QLineEdit, QComboBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import pandas as pd
@@ -41,22 +42,24 @@ import_required_packages()
 
 class AnalysisThread(QThread):
     analysis_complete = pyqtSignal(dict)
-    patterns = {
-        'IPv4 Address': re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'),
-        'IPv6 Address': re.compile(r'\b(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}\b'),
-        'Email Address': re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', re.IGNORECASE),
-        'BTC Address': re.compile(r'\b(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-zA-HJ-NP-Z0-9]{11,71})\b', re.IGNORECASE),        
-        'BTC txid': re.compile(r'\b[a-fA-F0-9]{64}\b')
-    }
-
-    def __init__(self, file_paths, selected_entities, regex_pattern):
+    def __init__(self, file_paths, selected_entities, regex_pattern, entities, include_context, context_type, context_size):
         super().__init__()
         self.file_paths = file_paths
         self.selected_entities = selected_entities
-        if regex_pattern:
-            self.patterns['Custom'] = re.compile(regex_pattern)
-        self.data = {entity: defaultdict(lambda: {'filenames': set(), 'count': 0}) for entity in selected_entities}
-    
+        self.entities = entities
+        self.include_context = include_context
+        self.context_type = context_type
+        self.context_size = int(context_size) if context_size.isdigit() else 0
+
+        self.patterns = {}
+        for entity in selected_entities:
+            if entity == 'Custom':
+                self.patterns['Custom'] = re.compile(regex_pattern)
+            elif entity in self.entities:
+                self.patterns[entity] = re.compile(self.entities[entity]['regex'])
+        
+        self.data = defaultdict(lambda: defaultdict(lambda: {'count': 0, 'filenames': set()}))
+
     def run(self):
         for file_path in self.file_paths:
             text = self.extract_text_from_file(file_path)
@@ -70,27 +73,24 @@ class AnalysisThread(QThread):
         logging.debug(f'Reading input file: {file_path}')
         try:
             if file_path.endswith('.pdf'):
-                return self.extract_text_from_pdf(file_path)
                 logging.debug('Finished reading PDF input file.')
+                return self.extract_text_from_pdf(file_path)
+                
             elif file_path.endswith('.txt'):
-                return self.extract_text_from_txt(file_path)
                 logging.debug('Finished reading TXT input file.')
-            elif file_path.endswith('.xlsx'):
-                return self.extract_text_from_excel(file_path)
-                text_from_excel = self.extract_text_from_excel(file_path)
-                logging.debug(f'Text extracted from XLSX file: {text_from_excel[:100]}...')  # Logs the first 100 characters of the extracted text
-                logging.debug('Finished reading XLSX input file.')
+                return self.extract_text_from_txt(file_path)                
             elif file_path.endswith('.csv'):
-                return self.extract_text_from_csv(file_path)
                 logging.debug('Finished reading CSV input file.')
+                return self.extract_text_from_csv(file_path)                
             else:
                 print(f"Unsupported file type: {file_path}")
-                return None
                 logging.debug('Finished reading input file - unsupported')
+                return None                
         except Exception as e:
             print(f"Error processing {file_path}: {e}")
-            return None
             logging.debug('Finished reading input file with error.')
+            return None
+            
 
     # Methods to handle different file types
     def extract_text_from_pdf(self, file_path):
@@ -103,18 +103,6 @@ class AnalysisThread(QThread):
         logging.debug('Starting analysis of TXT')
         with open(file_path, 'r') as txt_file:
             return txt_file.read()
-
-    def extract_text_from_excel(self, file_path):
-        logging.debug('Starting analysis of XLSX file: ' + file_path)
-        try:
-            logging.debug('Attempting to read Excel file using pandas...')
-            df = pd.read_excel(file_path)
-            text = ' '.join(df.astype(str).values.flatten())
-            logging.debug('Successfully extracted text from XLSX file.')
-            return text
-        except Exception as e:
-            logging.error(f'Error occurred while processing XLSX file {file_path}: {e}')
-            return ''
 
     def extract_text_from_csv(self, file_path):
         logging.debug('Starting analysis CSV, flattening data...')
@@ -130,15 +118,81 @@ class AnalysisThread(QThread):
             return ' '.join([' '.join(row) for row in csv_reader])
 
     def analyze_data(self, text, filename):
-        lines = text.split('\n')  # Split the text into lines
+        lines = text.split('\n')
         for line_number, line in enumerate(lines, start=1):
             for entity in self.selected_entities:
                 matches = self.patterns[entity].findall(line)
                 for match in matches:
-                    if (filename, line_number) not in self.data[entity][match]['filenames']:
-                        self.data[entity][match]['filenames'].add((filename, line_number))
-                    self.data[entity][match]['count'] += 1
+                    data_entry = self.data[entity][match]
+                    data_entry['filenames'].add(filename)
+                    data_entry['count'] += 1
+                    if self.include_context:
+                        context = self.get_context(lines, line_number, match)
+                        data_entry.setdefault('context', []).append(context)
 
+
+    def get_context(self, lines, line_number, match):
+        if self.context_type == 'sentences':
+            return self.get_context_sentences(lines, line_number, match)
+        elif self.context_type == 'lines':
+            return self.get_context_lines(lines, line_number)
+        elif self.context_type == 'words':
+            return self.get_context_words(lines, line_number, match)
+        elif self.context_type == 'characters':
+            return self.get_context_characters(lines, line_number, match)
+        
+        
+    def get_context_words(self, lines, line_number, match):
+        # Concatenate a buffer of lines around the entity
+        buffer = ' '.join(lines[max(0, line_number - 3):min(len(lines), line_number + 2)])
+
+        # Find the entity in the buffer and split into words
+        words = buffer.split()
+        try:
+            entity_index = words.index(match)
+        except ValueError:
+            return "Context not found"
+
+        # Calculate context range
+        start_index = max(0, entity_index - self.context_size)
+        end_index = min(len(words), entity_index + self.context_size + 1)
+
+        return ' '.join(words[start_index:end_index])
+
+    def get_context_lines(self, lines, line_number):
+        start_line = max(0, line_number - self.context_size - 1)
+        end_line = min(len(lines), line_number + self.context_size)
+        return '\n'.join(lines[start_line:end_line])
+
+    def get_context_characters(self, lines, line_number, match):
+        buffer = ' '.join(lines[max(0, line_number - 3):min(len(lines), line_number + 2)])
+        try:
+            match_start = buffer.index(match)
+            match_end = match_start + len(match)
+        except ValueError:
+            return "Context not found"
+
+        start_index = max(0, match_start - self.context_size)
+        end_index = min(len(buffer), match_end + self.context_size)
+        return buffer[start_index:end_index]
+
+    def get_context_sentences(self, lines, line_number, match):
+        buffer = ' '.join(lines[max(0, line_number - 3):min(len(lines), line_number + 2)])
+        sentences = re.split(r'(?<=[.!?]) +', buffer)
+
+        # Find the sentence containing the entity
+        match_sentence_index = -1
+        for i, sentence in enumerate(sentences):
+            if match in sentence:
+                match_sentence_index = i
+                break
+
+        if match_sentence_index == -1:
+            return "Context not found"
+
+        start_index = max(0, match_sentence_index - self.context_size)
+        end_index = min(len(sentences), match_sentence_index + self.context_size + 1)
+        return ' '.join(sentences[start_index:end_index])
 
 
 class MainWindow(QMainWindow):
@@ -146,13 +200,14 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle('Data Analyzer')
         self.setFixedSize(500, 400)
-
         self.file_paths = []
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        layout = QVBoxLayout(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        context_layout = QHBoxLayout()
+
 
         # File selection for analysis
         self.file_path_label = QLabel('No file selected for analysis')
@@ -169,15 +224,17 @@ class MainWindow(QMainWindow):
         self.analysis_button.clicked.connect(self.start_analysis)
         self.analysis_button.setEnabled(False)
 
+        self.entities = self.read_yaml('entities.yaml')
 
-        self.checkboxes = {
-            'IPv4 Address': QCheckBox('IPv4 Address'),
-            'IPv6 Address': QCheckBox('IPv6 Address'),
-            'Email Address': QCheckBox('Email Address'),
-            'BTC Address': QCheckBox('BTC Address'),
-            'BTC txid': QCheckBox('BTC txid'),
-            'Custom': QCheckBox('Custom'),
-        }
+        self.checkboxes = {}
+        for entity in self.entities:
+            self.checkboxes[entity] = QCheckBox(entity)
+            main_layout.addWidget(self.checkboxes[entity])
+
+        if 'Custom' not in self.checkboxes:
+            self.checkboxes['Custom'] = QCheckBox('Custom')
+            main_layout.addWidget(self.checkboxes['Custom'])
+            self.checkboxes['Custom'].stateChanged.connect(self.on_custom_checkbox_state_changed)
 
         self.checkboxes['Custom'].stateChanged.connect(self.on_custom_checkbox_state_changed)
         self.custom_regex_field = QLineEdit()
@@ -186,15 +243,31 @@ class MainWindow(QMainWindow):
         self.crossmatch_checkbox = QCheckBox('Output only crossmatches')
         self.crossmatch_checkbox.setEnabled(False)
 
-        layout.addWidget(self.file_path_label)
-        layout.addWidget(self.file_path_button)
-        layout.addWidget(self.output_file_label)
-        layout.addWidget(self.output_file_button)
-        layout.addWidget(self.analysis_button)
+        self.include_context_checkbox = QCheckBox('Include context in output')
+        context_layout.addWidget(self.include_context_checkbox)
+
+        self.context_size_combobox = QComboBox()
+        self.context_size_combobox.addItems(["sentences", "lines", "words", "characters"])
+        context_layout.addWidget(self.context_size_combobox)
+
+        self.context_size_input = QLineEdit()
+        self.context_size_input.setPlaceholderText('Context size (Enter a number)')
+        context_layout.addWidget(self.context_size_input)
+
+        main_layout.addLayout(context_layout)
+        main_layout.addWidget(self.file_path_label)
+        main_layout.addWidget(self.file_path_button)
+        main_layout.addWidget(self.output_file_label)
+        main_layout.addWidget(self.output_file_button)
+        main_layout.addWidget(self.analysis_button)
         for checkbox in self.checkboxes.values():
-            layout.addWidget(checkbox)
-        layout.addWidget(self.custom_regex_field)
-        layout.addWidget(self.crossmatch_checkbox)
+            main_layout.addWidget(checkbox)
+        main_layout.addWidget(self.custom_regex_field)
+        main_layout.addWidget(self.crossmatch_checkbox)
+
+    def read_yaml(self, file_path):
+        with open(file_path, 'r') as yaml_file:
+            return yaml.safe_load(yaml_file)
 
     def on_custom_checkbox_state_changed(self, state):
         self.custom_regex_field.setEnabled(state == Qt.Checked)
@@ -241,8 +314,10 @@ class MainWindow(QMainWindow):
             # Use a default file name and save it in the script directory
             output_file_path = os.path.join(os.path.dirname(__file__), 'output.csv')
 
-        # Change this to pass list of file paths instead of a single file path
-        self.analysis_thread = AnalysisThread(self.file_paths, selected_entities, regex_pattern)
+        context_type = self.context_size_combobox.currentText()
+        context_size = self.context_size_input.text()
+
+        self.analysis_thread = AnalysisThread(self.file_paths, selected_entities, regex_pattern, self.entities, self.include_context_checkbox.isChecked(), context_type, context_size)        
         self.analysis_thread.analysis_complete.connect(self.analysis_complete)
         self.analysis_thread.start()
 
@@ -267,39 +342,30 @@ class MainWindow(QMainWindow):
         if not output_file_path:
             output_file_path = os.path.join(os.path.dirname(__file__), 'output.csv')
         output_message = 'The data analysis is complete.\n\n' + summary
-        output_message += f"\n\nOutput file saved at: {os.path.join(os.path.dirname(__file__), output_file_path)}"
+        output_message += f"\n\nOutput file saved at: {output_file_path}"
         QMessageBox.information(self, 'Analysis Complete', output_message)
 
-        output_only_crossmatches = self.crossmatch_checkbox.isChecked()
-
         try:
-            # Output the data to a CSV file
-            with open(self.output_file_label.text(), 'w', newline='') as csvfile:
-                print("Writing to output.csv")  # Debugging print
-                fieldnames = ['Type', 'Entity', 'Occurrences', 'Source']
+            with open(output_file_path, 'w', newline='') as csvfile:
+                fieldnames = ['Type', 'Entity', 'Occurrences', 'Source', 'Context_Snippet']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-
                 writer.writeheader()
                 for entity, matches in data.items():
                     for match, info in matches.items():
-                        # Prepare filenames and line numbers string
-                        filenames_lines = ", ".join([f"Line {line} in {fname}" for fname, line in info['filenames']])
-                        writer.writerow({'Type': entity, 'Entity': match, 'Occurrences': info['count'], 'Source': filenames_lines})
-                        logging.debug('writing unique value to output file')
-                    logging.debug('writing value to output file')
-                logging.debug('Analysis complete. Writing results to output file.')
-            logging.debug('Output file generation complete.')
-
+                        row = {
+                            'Type': entity,
+                            'Entity': match,
+                            'Occurrences': info['count'],
+                            'Source': ', '.join(info['filenames'])
+                        }
+                        if self.include_context_checkbox.isChecked():
+                            if len(info['filenames']) > 1:
+                                row['Context_Snippet'] = 'Found in multiple input files, manual analysis required.'
+                            else:
+                                row['Context_Snippet'] = '\n\n'.join(info.get('context', []))
+                        writer.writerow(row)
         except Exception as e:
-            print("Error while writing to CSV file: ", e)
-
-            print("Finished writing to output.csv")  # Debugging print
-        except FileNotFoundError:
-            QMessageBox.critical(self, 'File Not Found', f"The output file {self.output_file_label.text()} was not found.")
-        except IOError:
-            QMessageBox.critical(self, 'File Error', f"There was an error writing to the file {self.output_file_label.text()}.")
-        except Exception as e:
-            QMessageBox.critical(self, 'Unexpected Error', f"An unexpected error occurred while writing to the file: {str(e)}")
+            QMessageBox.critical(self, 'Error', f"An error occurred while writing to the file: {str(e)}")
 
 def main():
     app = QApplication([])
