@@ -1,0 +1,15 @@
+IPv4 Address:
+    regex: '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
+IPv6 Address:
+    regex: '\b(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}\b'
+Email Address:
+    regex: '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+BTC Address:
+    regex: '\b(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-zA-HJ-NP-Z0-9]{11,71})\b'
+BTC txid:
+    regex: '\b[a-fA-F0-9]{64}\b'
+URLs:
+    regex: '\b(?:https?|ftp):\/\/\S+'
+Custom:
+    regex: ''
+
