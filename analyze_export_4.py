@@ -130,11 +130,12 @@ class AnalysisThread(QThread):
                         match_str = match
 
                     data_entry = self.data[entity][match_str]
-                    data_entry['filenames'].add(filename)
+                    data_entry['filenames'].add((filename, line_number))  # Store filename and line number
                     data_entry['count'] += 1
                     if self.include_context:
                         context = self.get_context(lines, line_number, match_str)
                         data_entry.setdefault('context', []).append(context)
+
 
     def get_context(self, lines, line_number, match):
         if self.context_type == 'sentences':
@@ -351,20 +352,23 @@ class MainWindow(QMainWindow):
 
         try:
             with open(output_file_path, 'w', newline='') as csvfile:
-                fieldnames = ['Type', 'Entity', 'Occurrences', 'Source', 'Context_Snippet']
+                fieldnames = ['Type', 'Entity', 'Occurrences', 'Source', 'Context_Snippet', 'Location']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
                 for entity, matches in data.items():
                     for match, info in matches.items():
+                        # Create a string to represent all locations (filename: line number)
+                        locations = ', '.join([f"{filename}:Line {line}" for filename, line in info['filenames']])
                         row = {
                             'Type': entity,
                             'Entity': match,
                             'Occurrences': info['count'],
-                            'Source': ', '.join(info['filenames'])
+                            'Source': locations  # Include locations in the Source column
                         }
                         if self.include_context_checkbox.isChecked():
+                            # Check if entity found in multiple files
                             if len(info['filenames']) > 1:
-                                row['Context_Snippet'] = 'Found in multiple input files, manual analysis required.'
+                                row['Context_Snippet'] = "identical entity found in multiple input files, manual analysis required"
                             else:
                                 row['Context_Snippet'] = '\n\n'.join(info.get('context', []))
                         writer.writerow(row)
