@@ -10,8 +10,10 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFileDialog, QMessageBox, QCheckBox, QLineEdit, QComboBox,
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QEvent
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QEvent, QUrl
 from openpyxl import load_workbook
+from PyQt5.QtGui import QDesktopServices
+
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -240,6 +242,11 @@ class MainWindow(QMainWindow):
         self.context_size_input.setPlaceholderText('Context size (Enter a number)')
         context_layout.addWidget(self.context_size_input)
 
+        self.link_label = QLabel()
+        self.link_label.setText('<a href="https://github.com/overcuriousity/analyze_export/">github</a>')
+        self.link_label.setOpenExternalLinks(True)
+        self.link_label.linkActivated.connect(self.open_browser)
+
         self.main_layout.addLayout(context_layout)
         self.main_layout.addWidget(self.file_path_label)
         self.main_layout.addWidget(self.file_path_button)
@@ -251,7 +258,11 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.custom_regex_field)
         self.main_layout.addWidget(self.crossmatch_checkbox)
         self.info_label = QLabel("Hover over an entity for more information")
-        self.main_layout.addWidget(self.info_label)        
+        self.main_layout.addWidget(self.info_label)   
+        self.main_layout.addWidget(self.link_label)
+
+    def open_browser(self, url):
+        QDesktopServices.openUrl(QUrl(url))
 
     def read_yaml(self, file_path):
         try:
