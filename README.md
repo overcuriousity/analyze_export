@@ -58,8 +58,8 @@ After starting the application, follow these steps:
 
 ## Known Issues
 
-- xlsx files are not processed correctly. As a workaround, CSV should be ingested.
-- context cannot be provided if the entity occurs in multiple filesThis requires still manual operation.
+- Currently, only CSV are processed correctly. TXT processing (as a fallback option for various other document types) is in the works.
+- context cannot be provided if the entity occurs in multiple files - this requires still manual operation.
 
 ## Contributing
 
