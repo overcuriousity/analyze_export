@@ -275,7 +275,7 @@ class MainWindow(QMainWindow):
         context_layout.addWidget(self.context_size_input)
 
         self.link_label = QLabel()
-        self.link_label.setText('<a href="https://debin.org">Feedback-Link</a>')
+        self.link_label.setText('<a href="https://github.com/overcuriousity/analyze_export">GitHub</a>')
         self.link_label.setOpenExternalLinks(True)
         self.link_label.linkActivated.connect(self.open_browser)
 
