@@ -1,5 +1,8 @@
 PyQt5
 pandas
 PyPDF2
-openpyxl
 pyaml
+odfpy
+pyexcel
+pyexcel_ods3
+pyexcel_xlsx
