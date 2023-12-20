@@ -1,11 +1,11 @@
 from collections import defaultdict
+import bisect
 import sys
 import os
 import re
 import csv
 import logging
-import yaml
-from PyPDF2 import PdfFileReader  
+import yaml 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFileDialog, QMessageBox, QCheckBox, QLineEdit, QComboBox, QDialog, QDialogButtonBox
@@ -23,193 +23,54 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 
 class AnalysisThread(QThread):
     analysis_complete = pyqtSignal(dict)
-    def __init__(self, file_paths, selected_entities, regex_pattern, entities, include_context, context_type, context_size, get_csv_delimiter):
+
+    def __init__(self, file_paths, selected_entities, regex_pattern, entities, include_context, mainWindow):
         super().__init__()
         self.file_paths = file_paths
         self.selected_entities = selected_entities
+        self.regex_pattern = regex_pattern
         self.entities = entities
         self.include_context = include_context
-        self.context_type = context_type
-        self.context_size = int(context_size) if context_size.isdigit() else 0
-        self.get_csv_delimiter = get_csv_delimiter
-        self.patterns = {}
-        for entity in selected_entities:
-            if entity == 'Custom':
-                self.patterns['Custom'] = re.compile(regex_pattern)
-            elif entity in self.entities:
-                self.patterns[entity] = re.compile(self.entities[entity]['regex'])
-        
-        self.data = defaultdict(lambda: defaultdict(lambda: {'count': 0, 'filenames': set()}))
+        self.mainWindow = mainWindow
+        self.context_size = 2  # Hardcoded context size
 
     def run(self):
+        result = defaultdict(lambda: defaultdict(lambda: {'count': 0, 'filenames': [], 'context': []}))
         for file_path in self.file_paths:
-            text, success = self.extract_text_from_file(file_path)  # This now consistently receives a tuple
-            if not success:
-                continue
-            filename = os.path.basename(file_path)
-            self.analyze_data(text, filename)
-        self.analysis_complete.emit(self.data)
+            with open(file_path, 'r', encoding='utf-8') as file:
+                content = file.readlines()
 
-    def extract_text_from_file(self, file_path):
-        logging.debug(f'Reading input file: {file_path}')
-        try:
-            if file_path.endswith('.pdf'):
-                logging.debug('Finished reading PDF input file.')
-                return self.extract_text_from_pdf(file_path)
-                
-            elif file_path.endswith('.txt'):
-                logging.debug('Finished reading TXT input file.')
-                return self.extract_text_from_txt(file_path)                
-            elif file_path.endswith('.csv'):
-                logging.debug('Finished reading CSV input file.')
-                return self.extract_text_from_csv(file_path)                
-            else:
-                print(f"Unsupported file type: {file_path}")
-                logging.debug('Finished reading input file - unsupported')
-                return None                
-        except Exception as e:
-            logging.error(f"Error processing {file_path}: {e}")
-            return None
-            
-    def extract_text_from_pdf(self, file_path):
-        try:
-            with open(file_path, 'rb') as pdf_file:
-                pdf_reader = PdfFileReader(pdf_file)
-                return ' '.join([pdf_reader.getPage(i).extractText() for i in range(pdf_reader.getNumPages())])
-        except Exception as e:
-            logging.error(f"Error processing {file_path}: {e}")
-            return None
-        
-    def extract_text_from_txt(self, file_path):
-        try:
-            with open(file_path, 'r', encoding='utf-8', errors='replace') as txt_file:
-                text_content = txt_file.read()
-                return text_content, True
-        except Exception as e:
-            logging.error(f"Error processing {file_path}: {e}")
-            return None, False
-            
-    def extract_text_from_csv(self, file_path, delimiter=None):
-        try:
-            with codecs.open(file_path, 'r', encoding='utf-8', errors='replace') as csv_file:
-                if delimiter is None:
-                    sample_data = csv_file.read(1024)
-                    csv_file.seek(0)
-                    try:
-                        dialect = csv.Sniffer().sniff(sample_data)
-                        reader = csv.reader(csv_file, dialect)
-                    except csv.Error:
-                        return None, False  # Return None and a flag indicating failure
-                else:
-                    reader = csv.reader(csv_file, delimiter=delimiter)
+            for entity, properties in self.entities.items():
+                if entity in self.selected_entities:
+                    regex = properties['regex']
+                    for match in re.finditer(regex, ''.join(content), re.MULTILINE):
+                        match_text = match.group()
+                        line_number = self.get_line_number(match, content)
+                        context_snippet = self.extract_context(content, line_number)
+                        result[entity][match_text]['count'] += 1
+                        result[entity][match_text]['filenames'].append((os.path.basename(file_path), line_number))
+                        result[entity][match_text]['context'].append(context_snippet)
 
-                return ' '.join([' '.join(row) for row in reader]), True
-        except Exception as e:
-            logging.error(f"Error processing {file_path}: {e}")
-            return None, True
+        self.analysis_complete.emit(result)
 
-    def analyze_data(self, text, filename):
-        for entity in self.selected_entities:
-            for match in self.patterns[entity].finditer(text):
-                match_text = match.group()
-                logging.debug(f"Match found: {match_text} in file {filename}")
-
-                start_pos, end_pos = match.start(), match.end()
-                data_entry = self.data[entity][match_text]
-                data_entry['filenames'].add((filename, start_pos))  # Store filename and start position
-                data_entry['count'] += 1
-
-                if self.include_context:
-                    # Context extraction based on type
-                    context = self.get_context(text, start_pos, end_pos, self.context_type, self.context_size)
-                    data_entry.setdefault('context', []).append(context)
-                logging.debug(f"Data entry updated: {data_entry}")
-
-    def get_context(self, text, start_pos, end_pos, context_type, context_size):
-        if context_type == 'lines':
-            return self.get_context_lines(text, start_pos, end_pos, context_size)
-        elif context_type == 'words':
-            return self.get_context_words(text, start_pos, end_pos, context_size)
-        elif context_type == 'characters':
-            return self.get_context_characters(text, start_pos, end_pos, context_size)
-        elif context_type == 'sentences':
-            return self.get_context_sentences(text, start_pos, end_pos, context_size)
-        else:
-            return "Context type not recognized"
-
-
-    def find_match_positions(self, text, pattern):
-        matches = list(re.finditer(pattern, text))
-        if not matches:
-            return -1, -1
-        start = matches[0].start()
-        end = matches[-1].end()
-        return start, end
-    
-    def get_context_lines(self, text, start_pos, end_pos, context_size):
-        lines = text.split('\n')
-        start_line = end_line = 0
-
-        # Find the line numbers for start_pos and end_pos
+    def get_line_number(self, match, content):
+        start_pos = match.start()
         current_pos = 0
-        for i, line in enumerate(lines):
-            if current_pos <= start_pos < current_pos + len(line):
-                start_line = i
-            if current_pos <= end_pos <= current_pos + len(line):
-                end_line = i
-            current_pos += len(line) + 1  # +1 for the newline character
+        for i, line in enumerate(content):
+            current_pos += len(line)
+            if current_pos >= start_pos:
+                return i + 1  # Line numbers start at 1
+        return -1  # In case line number is not found
 
-        # Extract context
-        start_context = max(0, start_line - context_size)
-        end_context = min(len(lines), end_line + context_size + 1)
-        return '\n'.join(lines[start_context:end_context])
-
-    def get_context_words(self, text, start_pos, end_pos, context_size):
-        words = text.split()
-        start_word = end_word = 0
-
-        current_pos = 0
-        for i, word in enumerate(words):
-            end_current_pos = current_pos + len(word)
-            if current_pos <= start_pos < end_current_pos:
-                start_word = i
-            if current_pos <= end_pos <= end_current_pos:
-                end_word = i
-            current_pos = end_current_pos + 1  # +1 for space
-
-        start_context = max(0, start_word - context_size)
-        end_context = min(len(words), end_word + context_size + 1)
-
-        return ' '.join(words[start_context:end_context])
-    
-    def get_context_characters(self, text, start_pos, end_pos, context_size):
-        start_context = max(0, start_pos - context_size)
-        end_context = min(len(text), end_pos + context_size)
-
-        return text[start_context:end_context]
-
-    def get_context_sentences(self, text, start_pos, end_pos, context_size):
-        sentences = re.split(r'(?<=[.!?]) +', text)
-        start_sentence = end_sentence = 0
-
-        current_pos = 0
-        for i, sentence in enumerate(sentences):
-            end_current_pos = current_pos + len(sentence)
-            if current_pos <= start_pos < end_current_pos:
-                start_sentence = i
-            if current_pos <= end_pos <= end_current_pos:
-                end_sentence = i
-            current_pos = end_current_pos + 1  # +1 for space after sentence
-
-        start_context = max(0, start_sentence - context_size)
-        end_context = min(len(sentences), end_sentence + context_size + 1)
-
-        return ' '.join(sentences[start_context:end_context])
-
+    def extract_context(self, content, line_number):
+        start_line = max(0, line_number - 1 - self.context_size)
+        end_line = min(line_number + self.context_size, len(content))
+        return ''.join(content[start_line:end_line])
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.global_csv_delimiter = None  # Initialize the global delimiter
         self.setWindowTitle('Data Analyzer')
         self.setFixedSize(800, 600)
         self.file_paths = []
@@ -221,13 +82,10 @@ class MainWindow(QMainWindow):
         output_format_layout = QHBoxLayout()
         context_layout = QHBoxLayout()
 
-
-        # File selection for analysis
         self.file_path_label = QLabel('No file selected for analysis')
         self.file_path_button = QPushButton('Select File for Analysis')
         self.file_path_button.clicked.connect(self.select_analysis_file)
 
-        # File selection for output
         self.output_file_label = QLabel('No file selected for output, saving at default location.')
 
         self.output_format_combobox = QComboBox()
@@ -239,7 +97,6 @@ class MainWindow(QMainWindow):
         self.output_file_button = QPushButton('Select output file location')
         self.output_file_button.clicked.connect(self.select_output_file)
 
-        # Add the button to the horizontal layout
         output_format_layout.addWidget(self.output_file_button)
 
         self.analysis_button = QPushButton('Start Analysis')
@@ -264,20 +121,25 @@ class MainWindow(QMainWindow):
         self.crossmatch_checkbox.setEnabled(False)
 
         self.include_context_checkbox = QCheckBox('Include context in output')
+        self.include_context_checkbox.setChecked(True)
         context_layout.addWidget(self.include_context_checkbox)
 
-        self.context_size_combobox = QComboBox()
-        self.context_size_combobox.addItems(["sentences", "lines", "words", "characters"])
-        context_layout.addWidget(self.context_size_combobox)
 
-        self.context_size_input = QLineEdit()
-        self.context_size_input.setPlaceholderText('Context size (Enter a number)')
-        context_layout.addWidget(self.context_size_input)
+        self.bottomline_layout = QHBoxLayout()
 
         self.link_label = QLabel()
-        self.link_label.setText('<a href="https://github.com/overcuriousity/analyze_export">GitHub</a>')
+        self.link_label.setText('<a href="https://github.com/overcuriousity/analyze_export">github-repo</a>')
         self.link_label.setOpenExternalLinks(True)
         self.link_label.linkActivated.connect(self.open_browser)
+        self.bottomline_layout.addWidget(self.link_label)
+        
+        self.display_regex_button = QPushButton('Display Regex Library...')
+        self.display_regex_button.clicked.connect(self.display_regex_library)
+        self.bottomline_layout.addWidget(self.display_regex_button)
+
+        self.exit_button = QPushButton('Exit')
+        self.exit_button.clicked.connect(self.close)
+        self.bottomline_layout.addWidget(self.exit_button)
 
         self.main_layout.addLayout(context_layout)
         self.main_layout.addWidget(self.file_path_label)
@@ -291,7 +153,7 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.crossmatch_checkbox)
         self.info_label = QLabel("Hover over an entity for more information")
         self.main_layout.addWidget(self.info_label)   
-        self.main_layout.addWidget(self.link_label)
+        self.main_layout.addLayout(self.bottomline_layout)
 
     def open_browser(self, url):
         QDesktopServices.openUrl(QUrl(url))
@@ -361,36 +223,38 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, 'Error', 'Invalid custom regex pattern.')
                 return
 
-            output_file_path = self.output_file_label.text() or 'output.csv'
-            context_type = self.context_size_combobox.currentText()
-            context_size = self.context_size_input.text()
-
             self.global_csv_delimiter = None
-            self.analysis_thread = AnalysisThread(self.file_paths, selected_entities, regex_pattern, self.entities, self.include_context_checkbox.isChecked(), context_type, context_size, self.get_csv_delimiter)
+            self.analysis_thread = AnalysisThread(self.file_paths, selected_entities, regex_pattern, self.entities, self.include_context_checkbox.isChecked(), self)
             self.analysis_thread.analysis_complete.connect(self.analysis_complete)
             self.analysis_thread.start()
         except Exception as e:
             QMessageBox.critical(self, 'Error', f"An error occurred while starting the analysis: {str(e)}")
             logging.error(f"An error occurred while starting the analysis: {str(e)}")
 
+
     def get_csv_delimiter(self, file_path):
         if self.global_csv_delimiter is not None:
             return self.global_csv_delimiter
 
-        text, success = self.extract_text_from_csv(file_path)
-        if text is None and not success:
-            delimiter, apply_to_all = self.prompt_for_delimiter()
-            if delimiter is not None:
-                if apply_to_all:
-                    self.global_csv_delimiter = delimiter
-                return delimiter
+        delimiter = self.analysis_thread.autodetect_csv_delimiter(file_path)
+        if delimiter:
+            return delimiter
+
+        delimiter, apply_to_all = self.prompt_for_delimiter()
+        if delimiter is not None:
+            if apply_to_all:
+                self.global_csv_delimiter = delimiter  # Set the global delimiter
+            return delimiter
         return None
+
 
     def prompt_for_delimiter(self):
         dialog = DelimiterDialog(self)
         if dialog.exec_() == QDialog.Accepted:
-            return dialog.getInputs()
+            delimiter, apply_to_all = dialog.getInputs()
+            return delimiter, apply_to_all
         return None, False
+
 
     def generate_summary(self, data):
         summary = ''
@@ -426,34 +290,29 @@ class MainWindow(QMainWindow):
             self.convert_csv_to_ods(output_file_path, ods_file_path)
 
         output_message = 'The data analysis is complete.\n\n' + summary
-        output_message += f"\n\nOutput file saved at: {output_file_path if selected_format == 'CSV' else ods_file_path if selected_format == 'ODS + CSV' else xlsx_file_path}"
+        output_message += f"\n\nOutput file saved at: {output_file_path if selected_format == 'CSV' else ods_file_path if selected_format == 'ODS + CSV' else 'Unknown'}"
         QMessageBox.information(self, 'Analysis Complete', output_message)
 
-    def write_csv(self, data, output_file_path): #data expects structure: {entity: {match_text: {'count': int, 'filenames': set, 'context': list}}}
+    def write_csv(self, data, output_file_path):
         try:
-            with open(output_file_path, 'w', newline='', encoding='utf-8') as csvfile:  # Specify UTF-8 encoding here
+            with open(output_file_path, 'w', newline='', encoding='utf-8') as csvfile:
                 fieldnames = ['Type', 'Entity', 'Occurrences', 'Source', 'Context_Snippet']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
                 for entity, matches in data.items():
                     for match, info in matches.items():
-                        locations = ', '.join([f"{filename}:Line {line}" for filename, line in info['filenames']])
+                        locations = ', '.join(f'{filename}, line {line}' for filename, line in info['filenames'])
                         row = {
                             'Type': entity,
                             'Entity': match,
                             'Occurrences': info['count'],
                             'Source': locations,
+                            'Context_Snippet': '\n\n'.join(info['context'])
                         }
-                        if self.include_context_checkbox.isChecked():
-                            if len(info['filenames']) > 1:
-                                row['Context_Snippet'] = "Identical entity found in multiple input files, manual analysis required"
-                            else:
-                                row['Context_Snippet'] = '\n\n'.join(info.get('context', []))
-                        else:
-                            row['Context_Snippet'] = ''
                         writer.writerow(row)
         except Exception as e:
             QMessageBox.critical(self, 'Error', f"An error occurred while writing to the file: {str(e)}")
+
 
     def convert_csv_to_ods(self, csv_file_path, ods_file_path):
         try:
@@ -466,6 +325,14 @@ class MainWindow(QMainWindow):
             table = Table(name="Analysis")
             spreadsheet.spreadsheet.addElement(table)
 
+            # Add header row
+            header_row = TableRow()
+            table.addElement(header_row)
+            for header in ['Type', 'Entity', 'Occurrences', 'Source', 'Context_Snippet']:
+                header_cell = TableCell()
+                header_row.addElement(header_cell)
+                header_cell.addElement(P(text=header))
+
             with open(csv_file_path, 'r', encoding='utf-8') as csv_file:
                 reader = csv.DictReader(csv_file)
                 for row in reader:
@@ -477,34 +344,51 @@ class MainWindow(QMainWindow):
                         p = P()
 
                         if header == 'Context_Snippet':
-                            print("Context Snippet:", cell_text)
-                            entities_to_highlight = [e.strip() for e in row['Entity'].split(' ')]
-                            print("Entities to Highlight:", entities_to_highlight)
-                            pattern = '|'.join(map(re.escape, entities_to_highlight))
-                            print("Pattern:", pattern)
-                            start = 0
-                            for match in re.finditer(pattern, cell_text, flags=re.IGNORECASE):
-                                before_match = cell_text[start:match.start()]
-                                match_text = cell_text[match.start():match.end()]
-
-                                p.addElement(Span(text=before_match))
-                                red_span = Span(stylename=red_style)
-                                red_span.addText(match_text)
-                                p.addElement(red_span)
-
-                                start = match.end()
-
-                            remaining_text = cell_text[start:]
-                            p.addElement(Span(text=remaining_text))
+                            logging.debug(f"Processing Context_Snippet: {cell_text}")
+                            highlighted_elements = self.highlight_text(cell_text, row['Entity'], red_style)
+                            for element in highlighted_elements:
+                                p.addElement(element)
+                            logging.debug(f"Highlighted elements added for entity {row['Entity']}")
                         else:
                             p.addText(cell_text)
                         tc.addElement(p)
 
-
             spreadsheet.save(ods_file_path)
+            logging.debug("ODS file saved successfully.")
         except Exception as e:
+            logging.error(f"An error occurred while converting to ODS file: {str(e)}")
             QMessageBox.critical(self, 'Error', f"An error occurred while converting to ODS file: {str(e)}")
 
+
+    def highlight_text(self, text, entity, red_style):
+        # Split the entity into words
+        entity_words = entity.split()
+        # Create a regex pattern to match any of the words in the entity
+        pattern = '|'.join(map(re.escape, entity_words))
+        start = 0
+        elements = []
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            before_match = text[start:match.start()]
+            match_text = text[match.start():match.end()]
+
+            # Log the highlighting process
+            logging.debug(f"Highlighting '{match_text}' in context: '{before_match}[{match_text}]'")
+
+            elements.append(Span(text=before_match))
+            red_span = Span(stylename=red_style)
+            red_span.addText(match_text)
+            elements.append(red_span)
+
+            start = match.end()
+
+        remaining_text = text[start:]
+        elements.append(Span(text=remaining_text))
+        return elements
+    
+    def display_regex_library(self):
+        script_directory = os.path.dirname(os.path.abspath(__file__))
+        regex_file_path = os.path.join(script_directory, "entities.yaml")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(regex_file_path))
     
     @staticmethod
     def is_valid_regex(pattern):
